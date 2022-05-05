@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../../robosuite"
+		},
+		{
+			"path": "../../mujoco-py"
+		},
+		{
+			"path": "../../baselines"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../anaconda3/envs/her/lib/python3.8/site-packages/gym/envs/robotics"
+		}
+	],
+	"settings": {}
+}

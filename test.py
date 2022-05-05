@@ -10,11 +10,9 @@ import robosuite as suite
 from robosuite_env.wrappers.gym_env_wrapper import GymGoalWrapper
 from robosuite_env.reach_eef import ReachEEF 
 from robosuite.environments.base import register_env
+from rl_modules.models import actor
+import robosuite.utils.transform_utils as T
 
-"""
-train the agent, the MPI part code is copy from openai baselines(https://github.com/openai/baselines/blob/master/baselines/her)
-
-"""
 def get_env_params(env):
     obs = env.reset()
     # close the environment
@@ -25,20 +23,17 @@ def get_env_params(env):
             }
     params['max_timesteps'] = env.horizon
     return params
-
-def launch(args):
-    register_env(ReachEEF)
-
-    env = suite.make(
+register_env(ReachEEF)
+env = suite.make(
             env_name="ReachEEF",
             robots="Panda",
             controller_configs=suite.load_controller_config(default_controller='OSC_POSITION'),
             use_camera_obs=False,
             use_object_obs=False,
-            has_renderer=False,
+            has_renderer=True,
             has_offscreen_renderer=False,
             control_freq=10,
-            horizon=75,
+            horizon=5000,
             # initialization_noise = {
             #     "magnitude": 0.5,
             #     "type": "gaussian"
@@ -49,28 +44,29 @@ def launch(args):
             # camera_depths=True,
             # camera_segmentations='element'
         )
+env = GymGoalWrapper(env)
+env.seed(1)
+env_params = get_env_params(env)
+# model = actor(env_params)
+# checkpoint = torch.load('model.pt')
+# model.load_state_dict(checkpoint[-1])
 
-    env = GymGoalWrapper(env)
-    env.seed(args.seed + MPI.COMM_WORLD.Get_rank())
-    env_params = get_env_params(env)
-    env = gym.wrappers.RecordEpisodeStatistics(env)
-    # set random seeds for reproduce
-    random.seed(args.seed + MPI.COMM_WORLD.Get_rank())
-    np.random.seed(args.seed + MPI.COMM_WORLD.Get_rank())
-    torch.manual_seed(args.seed + MPI.COMM_WORLD.Get_rank())
-    if args.cuda:
-        torch.cuda.manual_seed(args.seed + MPI.COMM_WORLD.Get_rank())
-    # get the environment parameters
-    
-    # create the ddpg agent to interact with the environment 
-    ddpg_trainer = ddpg_agent(args, env, env_params)
-    ddpg_trainer.learn()
+obs = env.reset()
 
-if __name__ == '__main__':
-    # take the configuration for the HER
-    os.environ['OMP_NUM_THREADS'] = '1'
-    os.environ['MKL_NUM_THREADS'] = '1'
-    os.environ['IN_MPI'] = '1'
-    # get the params
-    args = get_args()
-    launch(args)
+while True:
+    # action = model(obs)
+    action = np.array([0,0,0.00,0])
+    obs, reward, done, info = env.step(action)
+    # print('ENV GRIPPER QUAT')
+    # print(T.mat2euler(env.robots[0].sim.data.get_site_xmat("gripper0_grip_site").copy()))
+    # print('OBSERVATION')
+    # print(obs)
+    # print('REWARD')
+    # print(reward)
+    # print('DONE')
+    # print(done)
+    # print('INFO')
+    # print(info)
+    env.render()
+    if done:
+        env.reset()

@@ -1,0 +1,19 @@
+# A Dockerfile that sets up a full Gym install with test dependencies
+FROM python:3.7
+RUN apt-get -y update && apt-get install -y zip curl git libgl1-mesa-dev libgl1-mesa-glx libglew-dev \
+        libosmesa6-dev software-properties-common net-tools unzip vim \
+        virtualenv wget xpra xserver-xorg-dev libglfw3-dev patchelf
+
+# Download mujoco
+RUN mkdir /root/.mujoco && \
+    cd /root/.mujoco  && \
+    wget https://github.com/deepmind/mujoco/releases/download/2.1.0/mujoco210-linux-x86_64.tar.gz &&\
+    tar -xf mujoco210-linux-x86_64.tar.gz
+
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mujoco210/bin
+
+RUN cd ~/ \
+    && git clone clone https://github.com/StanfordVL/robosuite.git \
+    && cd robosuite \
+    && pip install -r requirements.txt
+

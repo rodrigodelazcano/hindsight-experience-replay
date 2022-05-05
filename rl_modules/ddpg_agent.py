@@ -8,6 +8,7 @@ from rl_modules.replay_buffer import replay_buffer
 from rl_modules.models import actor, critic
 from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
+from torch.utils.tensorboard import SummaryWriter
 
 """
 ddpg with HER (MPI-version)
@@ -32,10 +33,11 @@ class ddpg_agent:
         self.critic_target_network.load_state_dict(self.critic_network.state_dict())
         # if use gpu
         if self.args.cuda:
-            self.actor_network.cuda()
-            self.critic_network.cuda()
-            self.actor_target_network.cuda()
-            self.critic_target_network.cuda()
+            self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+            self.actor_network.to(self.device)
+            self.critic_network.to(self.device)
+            self.actor_target_network.to(self.device)
+            self.critic_target_network.to(self.device)
         # create the optimizer
         self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
         self.critic_optim = torch.optim.Adam(self.critic_network.parameters(), lr=self.args.lr_critic)
@@ -48,6 +50,18 @@ class ddpg_agent:
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
         # create the dict for store the model
         if MPI.COMM_WORLD.Get_rank() == 0:
+            import wandb
+
+            wandb.init(
+            project="ENPM692 - Final Project",
+            entity=None,
+            sync_tensorboard=True,
+            # config=vars(args),
+            name="DDPG_Panda",
+            monitor_gym=False,
+            save_code=True,
+            )
+            self.writer = SummaryWriter(f"runs/DDPG_Panda")
             if not os.path.exists(self.args.save_dir):
                 os.mkdir(self.args.save_dir)
             # path to save the model
@@ -61,10 +75,24 @@ class ddpg_agent:
 
         """
         # start to collect samples
+        global_step = 0
         for epoch in range(self.args.n_epochs):
-            for _ in range(self.args.n_cycles):
+            # print('MAX EPOCHS')
+            # print(self.args.n_epochs)
+            # print('NUMBER OF EPOCSH')
+            # print(epoch)
+            for cycle in range(self.args.n_cycles):
+                # print('MAX CYCLES')
+                # print(self.args.n_cycles)
+                # print('NUMBER OF CYCLES')
+                # print(cycle)
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
-                for _ in range(self.args.num_rollouts_per_mpi):
+                for step in range(self.args.num_rollouts_per_mpi):
+                    # print('MAX ROLLOUT PER MPI')
+                    # print(self.args.num_rollouts_per_mpi)
+                    # print('NUMBER OF STEP')
+                    # print(step)
+                    global_step = step * cycle * epoch
                     # reset the rollouts
                     ep_obs, ep_ag, ep_g, ep_actions = [], [], [], []
                     # reset the environment
@@ -74,12 +102,17 @@ class ddpg_agent:
                     g = observation['desired_goal']
                     # start to collect samples
                     for t in range(self.env_params['max_timesteps']):
+                        # print('MAX TIMESTEPS')
+                        # print(self.env_params['max_timesteps'])
+                        # print('TIME STEP')
+                        # print(t)
                         with torch.no_grad():
                             input_tensor = self._preproc_inputs(obs, g)
                             pi = self.actor_network(input_tensor)
                             action = self._select_actions(pi)
                         # feed the actions into the environment
                         observation_new, _, _, info = self.env.step(action)
+
                         obs_new = observation_new['observation']
                         ag_new = observation_new['achieved_goal']
                         # append rollouts
@@ -114,8 +147,15 @@ class ddpg_agent:
             success_rate = self._eval_agent()
             if MPI.COMM_WORLD.Get_rank() == 0:
                 print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
-                torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
-                            self.model_path + '/model.pt')
+                if self.env.robot_configs[0]["controller_config"]["type"] == "JOINT_VELOCITY":
+                    self.writer.add_scalar("charts/eval_success_joint_vel", success_rate, epoch)
+
+                    torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
+                                self.model_path + '/model_joint_vel.pt')
+                else:
+                   self.writer.add_scalar("charts/eval_success_osc", success_rate, epoch)
+                   torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
+                                self.model_path + '/model_osc.pt') 
 
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):
@@ -125,7 +165,7 @@ class ddpg_agent:
         inputs = np.concatenate([obs_norm, g_norm])
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
-            inputs = inputs.cuda()
+            inputs = inputs.to(self.device)
         return inputs
     
     # this function will choose action for the agent and do the exploration
@@ -198,10 +238,10 @@ class ddpg_agent:
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
         r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) 
         if self.args.cuda:
-            inputs_norm_tensor = inputs_norm_tensor.cuda()
-            inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
-            actions_tensor = actions_tensor.cuda()
-            r_tensor = r_tensor.cuda()
+            inputs_norm_tensor = inputs_norm_tensor.to(self.device)
+            inputs_next_norm_tensor = inputs_next_norm_tensor.to(self.device)
+            actions_tensor = actions_tensor.to(self.device)
+            r_tensor = r_tensor.to(self.device)
         # calculate the target Q value function
         with torch.no_grad():
             # do the normalization

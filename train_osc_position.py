@@ -11,10 +11,6 @@ from robosuite_env.wrappers.gym_env_wrapper import GymGoalWrapper
 from robosuite_env.reach_eef import ReachEEF 
 from robosuite.environments.base import register_env
 
-"""
-train the agent, the MPI part code is copy from openai baselines(https://github.com/openai/baselines/blob/master/baselines/her)
-
-"""
 def get_env_params(env):
     obs = env.reset()
     # close the environment
@@ -23,45 +19,45 @@ def get_env_params(env):
             'action': env.action_space.shape[0],
             'action_max': env.action_space.high[0],
             }
-    params['max_timesteps'] = env.horizon
+    params['max_timesteps'] = 200
     return params
 
 def launch(args):
     register_env(ReachEEF)
-
     env = suite.make(
-            env_name="ReachEEF",
-            robots="Panda",
-            controller_configs=suite.load_controller_config(default_controller='OSC_POSITION'),
-            use_camera_obs=False,
-            use_object_obs=False,
-            has_renderer=False,
-            has_offscreen_renderer=False,
-            control_freq=10,
-            horizon=75,
-            # initialization_noise = {
-            #     "magnitude": 0.5,
-            #     "type": "gaussian"
-            # }
-            # camera_names=["agentview"],
-            # camera_heights=128,
-            # camera_widths=128,
-            # camera_depths=True,
-            # camera_segmentations='element'
-        )
+                env_name="ReachEEF",
+                robots="Panda",
+                controller_configs=suite.load_controller_config(default_controller='OSC_POSITION'),
+                use_camera_obs=False,
+                use_object_obs=False,
+                has_renderer=False,
+                has_offscreen_renderer=False,
+                control_freq=10,
+                horizon=200,
+                initialization_noise = {
+                    "magnitude": 0.5,
+                    "type": "gaussian"
+                }
+                # camera_names=["agentview"],
+                # camera_heights=128,
+                # camera_widths=128,
+                # camera_depths=True,
+                # camera_segmentations='element'
+            )
 
     env = GymGoalWrapper(env)
-    env.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     env_params = get_env_params(env)
     env = gym.wrappers.RecordEpisodeStatistics(env)
+
     # set random seeds for reproduce
+    env.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     random.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     np.random.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     torch.manual_seed(args.seed + MPI.COMM_WORLD.Get_rank())
     if args.cuda:
         torch.cuda.manual_seed(args.seed + MPI.COMM_WORLD.Get_rank())
     # get the environment parameters
-    
+
     # create the ddpg agent to interact with the environment 
     ddpg_trainer = ddpg_agent(args, env, env_params)
     ddpg_trainer.learn()
